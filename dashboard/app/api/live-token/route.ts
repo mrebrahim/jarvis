@@ -14,21 +14,37 @@ export async function POST() {
     return NextResponse.json({ error: "agents_disabled" }, { status: 423 });
   }
 
+  let model: string;
+  let apiKey: string;
+  try {
+    model = serverEnv.liveModel();
+    apiKey = serverEnv.geminiApiKey();
+  } catch (e) {
+    // Names the missing env var only, never a value.
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  }
+
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
-  const model = serverEnv.liveModel();
-  const ai = new GoogleGenAI({ apiKey: serverEnv.geminiApiKey(), httpOptions: { apiVersion: "v1alpha" } });
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "v1alpha" } });
 
   const now = Date.now();
-  const token = await ai.authTokens.create({
-    config: {
-      uses: 1,
-      expireTime: new Date(now + 30 * 60_000).toISOString(),
-      newSessionExpireTime: new Date(now + 60_000).toISOString(),
-      liveConnectConstraints: { model, config: buildLiveConfig(today) },
-      lockAdditionalFields: [],
-      httpOptions: { apiVersion: "v1alpha" },
-    },
-  });
+  let token;
+  try {
+    token = await ai.authTokens.create({
+      config: {
+        uses: 1,
+        expireTime: new Date(now + 30 * 60_000).toISOString(),
+        newSessionExpireTime: new Date(now + 60_000).toISOString(),
+        liveConnectConstraints: { model, config: buildLiveConfig(today) },
+        lockAdditionalFields: [],
+        httpOptions: { apiVersion: "v1alpha" },
+      },
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("live-token: Gemini rejected token request", message);
+    return NextResponse.json({ error: `Gemini: ${message.slice(0, 300)}`, model }, { status: 502 });
+  }
 
   if (!token.name) return NextResponse.json({ error: "token_failed" }, { status: 502 });
   return NextResponse.json({ token: token.name, model, sessionId: crypto.randomUUID() });

@@ -44,7 +44,10 @@ export class JarvisLive {
     try {
       const res = await fetch("/api/live-token", { method: "POST" });
       if (res.status === 423) throw new Error("الـ agents متوقفين من زرار الطوارئ");
-      if (!res.ok) throw new Error(`token: ${res.status}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `token: ${res.status}`);
+      }
       const { token, model, sessionId } = (await res.json()) as { token: string; model: string; sessionId: string };
       this.sessionId = sessionId;
 
