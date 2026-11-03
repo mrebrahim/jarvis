@@ -33,7 +33,7 @@ supabase link --project-ref <ref>
 supabase db push
 ```
 
-بعد كده عدّل `supabase/seed.sql` بالأرقام والأسامي الحقيقية وشغّله. من Authentication في Supabase اعمل invite لإيميل إبراهيم (الدخول بالـ magic link مقفول على اليوزرز الموجودين بس)، وبعد أول دخول:
+بعد كده عدّل `supabase/seed.sql` بالأرقام والأسامي الحقيقية وشغّله. أي حد يقدر يعمل حساب بالـ magic link، بس مفيش حد يشوف أي داتا غير اللي في `app_owners` (RLS). إيميل إبراهيم بيتضاف لوحده (migration `auto_owner_on_signup`)، أو يدويًا:
 
 ```sql
 insert into public.app_owners (user_id) select id from auth.users where email = '<email>';
