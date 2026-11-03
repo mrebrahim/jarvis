@@ -35,8 +35,9 @@ export async function POST() {
         uses: 1,
         expireTime: new Date(now + 30 * 60_000).toISOString(),
         newSessionExpireTime: new Date(now + 60_000).toISOString(),
+        // No lockAdditionalFields: with constraints set and no field mask, the
+        // server locks the whole config (prompt, tools, voice) to this token.
         liveConnectConstraints: { model, config: buildLiveConfig(today) },
-        lockAdditionalFields: [],
         httpOptions: { apiVersion: "v1alpha" },
       },
     });
