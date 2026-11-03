@@ -6,7 +6,7 @@
 --   * All "day" boundaries are Africa/Cairo.
 -- =====================================================================
 
-create extension if not exists vector;
+create extension if not exists vector with schema extensions;
 create extension if not exists pg_cron;
 
 -- ---------------------------------------------------------------------
@@ -14,12 +14,12 @@ create extension if not exists pg_cron;
 -- ---------------------------------------------------------------------
 
 create or replace function public.cairo_today()
-returns date language sql stable as $$
+returns date language sql stable set search_path = public as $$
   select (now() at time zone 'Africa/Cairo')::date
 $$;
 
 create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = public as $$
 begin
   new.updated_at := now();
   return new;
@@ -239,11 +239,11 @@ create table public.memories (
   id               uuid primary key default gen_random_uuid(),
   kind             text not null check (kind in ('fact', 'preference', 'person', 'project')),
   content          text not null,
-  embedding        vector(768),
+  embedding        extensions.vector(768),
   metadata         jsonb not null default '{}',
   created_at       timestamptz not null default now()
 );
-create index memories_embedding_idx on public.memories using hnsw (embedding vector_cosine_ops);
+create index memories_embedding_idx on public.memories using hnsw (embedding extensions.vector_cosine_ops);
 
 create table public.course_kb (
   id               uuid primary key default gen_random_uuid(),
@@ -253,24 +253,24 @@ create table public.course_kb (
   content          text not null,
   price_egp        numeric,                      -- the ONLY prices the courses agent may quote
   valid_until      date,
-  embedding        vector(768),
+  embedding        extensions.vector(768),
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
-create index course_kb_embedding_idx on public.course_kb using hnsw (embedding vector_cosine_ops);
+create index course_kb_embedding_idx on public.course_kb using hnsw (embedding extensions.vector_cosine_ops);
 create trigger course_kb_updated before update on public.course_kb
   for each row execute function public.set_updated_at();
 
 -- The ONLY retrieval surface for the courses Sales Agent.
-create or replace function public.match_course_kb(query_embedding vector(768), match_count int default 5)
+create or replace function public.match_course_kb(query_embedding extensions.vector(768), match_count int default 5)
 returns table (id uuid, course text, kind text, title text, content text, price_egp numeric, similarity float)
-language sql stable as $$
+language sql stable set search_path = public as $$
   select k.id, k.course, k.kind, k.title, k.content, k.price_egp,
-         1 - (k.embedding <=> query_embedding) as similarity
+         1 - (k.embedding operator(extensions.<=>) query_embedding) as similarity
   from public.course_kb k
   where k.embedding is not null
     and (k.valid_until is null or k.valid_until >= public.cairo_today())
-  order by k.embedding <=> query_embedding
+  order by k.embedding operator(extensions.<=>) query_embedding
   limit match_count
 $$;
 
@@ -282,7 +282,7 @@ $$;
 create or replace function public.sales_outreach(p_day date default public.cairo_today())
 returns table (contact_number text, contact_name text, first_outbound_at timestamptz,
                first_reply_at timestamptz, replied boolean, contacted_by text)
-language sql stable as $$
+language sql stable set search_path = public as $$
   with sales as (
     select id from public.wa_instances where purpose = 'sales'
   ), day_msgs as (
@@ -314,7 +314,7 @@ $$;
 -- C-1: leads added since a Cairo date, from today's snapshot.
 create or replace function public.new_leads(p_since date default public.cairo_today())
 returns table (perfex_lead_id int, name text, company text, source text, status text, date_added timestamptz)
-language sql stable as $$
+language sql stable set search_path = public as $$
   select perfex_lead_id, name, company, source, status, date_added
   from public.leads_daily
   where snapshot_date = public.cairo_today()
@@ -326,7 +326,7 @@ $$;
 -- One JSON document = the "Today" screen, the morning briefing input and the
 -- get_today_overview tool. Security invoker: RLS applies to the caller.
 create or replace function public.today_overview(p_day date default public.cairo_today())
-returns jsonb language sql stable as $$
+returns jsonb language sql stable set search_path = public as $$
   select jsonb_build_object(
     'day', p_day,
     'generated_at', now(),
@@ -404,7 +404,7 @@ $$;
 -- ---------------------------------------------------------------------
 
 create or replace function public.expire_approvals()
-returns integer language sql as $$
+returns integer language sql set search_path = public as $$
   with x as (
     update public.approvals set status = 'expired'
     where status = 'pending' and expires_at <= now()
@@ -484,8 +484,8 @@ revoke all on function public.decide_approval(uuid, boolean) from public, anon;
 revoke all on function public.set_agents_enabled(boolean, text) from public, anon;
 grant execute on function public.decide_approval(uuid, boolean) to authenticated;
 grant execute on function public.set_agents_enabled(boolean, text) to authenticated;
-revoke all on function public.match_course_kb(vector, int) from public, anon, authenticated;
-grant execute on function public.match_course_kb(vector, int) to service_role;
+revoke all on function public.match_course_kb(extensions.vector, int) from public, anon, authenticated;
+grant execute on function public.match_course_kb(extensions.vector, int) to service_role;
 
 -- ---------------------------------------------------------------------
 -- Realtime for the "Today" screen (D-1)
